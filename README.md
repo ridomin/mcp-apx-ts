@@ -18,6 +18,12 @@ A Model Context Protocol (MCP) server for Microsoft Teams that provides tools to
 - Send/list messages
 - Uses delegated authentication (device code flow)
 
+### Bidirectional Messaging (Webhook / Change Notifications)
+- Start a local HTTP listener that receives Graph change notifications
+- Subscribe to new messages on any Teams resource (chats, channels, all-messages)
+- Drain received messages via an MCP tool — no polling required
+- Manage (list, renew, remove) active Graph subscriptions
+
 ## Requirements
 
 - Node.js >= 22.0.0
@@ -125,6 +131,78 @@ To send rich messages with Adaptive Cards, use the `attachments` parameter:
 - The `contentType` must be `application/vnd.microsoft.card.adaptive`
 - Include `text` field (can be a placeholder like "Card")
 
+## Bidirectional Messaging
+
+The server supports receiving Teams messages in near-real-time via Microsoft Graph [change notifications](https://learn.microsoft.com/en-us/graph/change-notifications-overview) (webhooks).
+
+### How it works
+
+```
+Teams message sent
+       ↓
+Microsoft Graph
+       ↓  (HTTPS POST)
+Your Webhook Endpoint  ← must be publicly reachable
+       ↓
+In-memory message queue
+       ↓
+teams_get_pending_messages  ← MCP client drains the queue
+```
+
+### Setup
+
+1. **Expose a public HTTPS URL** – Microsoft Graph requires a publicly accessible endpoint. During development, [ngrok](https://ngrok.com/) works well:
+   ```bash
+   ngrok http 3978
+   # Note the https URL, e.g. https://abc123.ngrok.io
+   ```
+
+2. **Start the webhook listener** via the MCP tool:
+   ```json
+   {
+     "tool": "teams_start_webhook",
+     "arguments": {
+       "port": 3978,
+       "publicUrl": "https://abc123.ngrok.io",
+       "clientState": "my-shared-secret"
+     }
+   }
+   ```
+
+3. **Subscribe to a resource**:
+   ```json
+   {
+     "tool": "teams_subscribe_graph_messages",
+     "arguments": {
+       "resource": "/chats/19:abc123@thread.v2/messages",
+       "expirationMinutes": 60
+     }
+   }
+   ```
+
+4. **Poll for new messages** (call whenever you want to check):
+   ```json
+   { "tool": "teams_get_pending_messages" }
+   ```
+   Each call drains the queue — messages are returned exactly once.
+
+5. **Renew before expiry** (subscriptions expire after at most 4230 minutes for chat messages):
+   ```json
+   {
+     "tool": "teams_renew_graph_subscription",
+     "arguments": { "subscriptionId": "...", "expirationMinutes": 60 }
+   }
+   ```
+
+### Subscribable resources
+
+| Resource | Scope |
+|---|---|
+| `/chats/{chatId}/messages` | Single chat |
+| `/teams/{teamId}/channels/{channelId}/messages` | Single channel |
+| `/chats/getAllMessages` | All chats in tenant (admin consent) |
+| `/teams/getAllMessages` | All channels in tenant (admin consent) |
+
 ## Available Tools
 
 | Tool | Description |
@@ -148,6 +226,12 @@ To send rich messages with Adaptive Cards, use the `attachments` parameter:
 | `teams_list_graph_chats` | List chats (Graph API) |
 | `teams_send_graph_message` | Send message (Graph API) |
 | `teams_list_graph_messages` | List messages (Graph API) |
+| `teams_start_webhook` | **[New]** Start local webhook HTTP listener |
+| `teams_subscribe_graph_messages` | **[New]** Subscribe to Teams message notifications |
+| `teams_get_pending_messages` | **[New]** Drain received messages from the queue |
+| `teams_list_graph_subscriptions` | **[New]** List active Graph subscriptions |
+| `teams_renew_graph_subscription` | **[New]** Renew an expiring subscription |
+| `teams_unsubscribe_graph_messages` | **[New]** Remove a Graph subscription |
 
 ## OpenCode Configuration
 

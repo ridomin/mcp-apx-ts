@@ -6,6 +6,7 @@ import type { GraphTeamsClient } from './graph.js'
 import type { Activity, Account, CreateConversationParams, ReactionType } from './types.js'
 import { getDelegatedGraphToken } from './token.js'
 import type { TokenManagerOptions } from './token.js'
+import { getWebhookServer } from './webhook.js'
 
 export function registerTools (server: McpServer, client: TeamsApiClient): void {
   // Team tools
@@ -652,6 +653,260 @@ export function registerGraphTools (server: McpServer, client: GraphTeamsClient,
         const result = await client.listMessages(chatId)
         return {
           content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
+        }
+      } catch (error) {
+        return handleError(error)
+      }
+    }
+  )
+}
+
+/**
+ * registerWebhookTools
+ *
+ * Registers four MCP tools that implement bidirectional Teams messaging via
+ * Microsoft Graph change notifications (webhooks):
+ *
+ *  - teams_start_webhook           Start the local HTTP webhook listener
+ *  - teams_subscribe_graph_messages  Subscribe to new messages on a resource
+ *  - teams_get_pending_messages    Drain messages received since last call
+ *  - teams_list_graph_subscriptions  Show active Graph subscriptions
+ *  - teams_renew_graph_subscription  Renew an expiring subscription
+ *  - teams_unsubscribe_graph_messages Remove a subscription
+ */
+export function registerWebhookTools (
+  server: McpServer,
+  tokenOptions?: TokenManagerOptions
+): void {
+  // ── Start webhook server ──────────────────────────────────────────────────
+  server.tool(
+    'teams_start_webhook',
+    'Start the local HTTP webhook listener that receives Teams message notifications from Microsoft Graph. ' +
+    'Call this once before creating subscriptions. The publicUrl must be a publicly reachable HTTPS URL ' +
+    '(e.g. via ngrok) that Microsoft Graph can POST change notifications to.',
+    {
+      port: z.number().int().optional().describe('TCP port to listen on (default: 3978)'),
+      publicUrl: z
+        .string()
+        .optional()
+        .describe(
+          'Public HTTPS base URL of this server visible to Microsoft Graph, e.g. https://abc123.ngrok.io'
+        ),
+      clientState: z
+        .string()
+        .optional()
+        .describe('Optional shared secret validated on every incoming notification'),
+    },
+    async ({ port, publicUrl, clientState }): Promise<CallToolResult> => {
+      try {
+        const wh = getWebhookServer({ port, publicUrl, clientState })
+        await wh.start()
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify({
+                success: true,
+                port: port ?? 3978,
+                notificationUrl: publicUrl ? `${publicUrl}/webhook/notifications` : undefined,
+                healthUrl: publicUrl ? `${publicUrl}/health` : undefined,
+                message:
+                  'Webhook server started. Use teams_subscribe_graph_messages to subscribe to a resource.',
+              }, null, 2),
+            },
+          ],
+        }
+      } catch (error) {
+        return handleError(error)
+      }
+    }
+  )
+
+  // ── Subscribe to messages ─────────────────────────────────────────────────
+  server.tool(
+    'teams_subscribe_graph_messages',
+    'Subscribe to new Teams messages on a Graph resource so they are pushed to the local webhook ' +
+    'and become available via teams_get_pending_messages. ' +
+    'Requires teams_start_webhook to have been called first with a publicUrl.',
+    {
+      resource: z
+        .string()
+        .describe(
+          'Graph resource to subscribe to. Examples:\n' +
+          '  /chats/{chatId}/messages\n' +
+          '  /teams/{teamId}/channels/{channelId}/messages\n' +
+          '  /chats/getAllMessages  (all chats – requires admin consent)\n' +
+          '  /teams/getAllMessages  (all channel messages – requires admin consent)'
+        ),
+      expirationMinutes: z
+        .number()
+        .int()
+        .optional()
+        .describe('Subscription lifetime in minutes (default: 60, max: 4230 for chat messages)'),
+    },
+    async ({ resource, expirationMinutes }): Promise<CallToolResult> => {
+      try {
+        if (!tokenOptions) {
+          throw new Error('tokenOptions are required to create a Graph subscription')
+        }
+        const wh = getWebhookServer()
+        const sub = await wh.subscribe(resource, tokenOptions, expirationMinutes)
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify({
+                success: true,
+                subscriptionId: sub.id,
+                resource: sub.resource,
+                expirationDateTime: sub.expirationDateTime,
+                message:
+                  'Subscription active. New messages will queue automatically. ' +
+                  'Call teams_get_pending_messages to retrieve them.',
+              }, null, 2),
+            },
+          ],
+        }
+      } catch (error) {
+        return handleError(error)
+      }
+    }
+  )
+
+  // ── Drain pending messages ────────────────────────────────────────────────
+  server.tool(
+    'teams_get_pending_messages',
+    'Retrieve all Teams messages received via webhook since the last call to this tool. ' +
+    'Each call drains the queue – messages are returned exactly once. ' +
+    'For basic notifications (no encrypted resource data) the resourceData field contains ' +
+    'the message id; use teams_list_graph_messages to fetch the full content if needed.',
+    {},
+    async (): Promise<CallToolResult> => {
+      try {
+        const wh = getWebhookServer()
+        const messages = wh.drainMessages()
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify(
+                {
+                  count: messages.length,
+                  messages,
+                },
+                null,
+                2
+              ),
+            },
+          ],
+        }
+      } catch (error) {
+        return handleError(error)
+      }
+    }
+  )
+
+  // ── List active subscriptions ─────────────────────────────────────────────
+  server.tool(
+    'teams_list_graph_subscriptions',
+    'List all active Microsoft Graph webhook subscriptions managed by this MCP server instance.',
+    {},
+    async (): Promise<CallToolResult> => {
+      try {
+        const wh = getWebhookServer()
+        const subs = wh.listSubscriptions()
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify({ count: subs.length, subscriptions: subs }, null, 2),
+            },
+          ],
+        }
+      } catch (error) {
+        return handleError(error)
+      }
+    }
+  )
+
+  // ── Renew a subscription ──────────────────────────────────────────────────
+  server.tool(
+    'teams_renew_graph_subscription',
+    'Renew an expiring Microsoft Graph webhook subscription to extend its lifetime.',
+    {
+      subscriptionId: z.string().describe('The subscription ID to renew'),
+      expirationMinutes: z
+        .number()
+        .int()
+        .optional()
+        .describe('New lifetime in minutes from now (default: 60)'),
+    },
+    async ({ subscriptionId, expirationMinutes }): Promise<CallToolResult> => {
+      try {
+        if (!tokenOptions) {
+          throw new Error('tokenOptions are required to renew a Graph subscription')
+        }
+        const tokenInfo = await getDelegatedGraphToken(tokenOptions)
+        const minutes = expirationMinutes ?? 60
+        const expiration = new Date(Date.now() + minutes * 60 * 1000)
+
+        const response = await fetch(
+          `https://graph.microsoft.com/v1.0/subscriptions/${subscriptionId}`,
+          {
+            method: 'PATCH',
+            headers: {
+              Authorization: `Bearer ${tokenInfo.token}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ expirationDateTime: expiration.toISOString() }),
+          }
+        )
+
+        if (!response.ok) {
+          const text = await response.text()
+          throw new Error(`Failed to renew subscription: HTTP ${response.status} – ${text}`)
+        }
+
+        const updated = await response.json() as { id: string; expirationDateTime: string }
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify({
+                success: true,
+                subscriptionId: updated.id,
+                newExpirationDateTime: updated.expirationDateTime,
+              }, null, 2),
+            },
+          ],
+        }
+      } catch (error) {
+        return handleError(error)
+      }
+    }
+  )
+
+  // ── Remove a subscription ─────────────────────────────────────────────────
+  server.tool(
+    'teams_unsubscribe_graph_messages',
+    'Remove a Microsoft Graph webhook subscription so notifications stop being delivered.',
+    {
+      subscriptionId: z.string().describe('The subscription ID to remove'),
+    },
+    async ({ subscriptionId }): Promise<CallToolResult> => {
+      try {
+        if (!tokenOptions) {
+          throw new Error('tokenOptions are required to delete a Graph subscription')
+        }
+        const wh = getWebhookServer()
+        await wh.unsubscribe(subscriptionId, tokenOptions)
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify({ success: true, subscriptionId }, null, 2),
+            },
+          ],
         }
       } catch (error) {
         return handleError(error)
