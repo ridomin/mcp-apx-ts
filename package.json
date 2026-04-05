@@ -20,7 +20,9 @@
     "test": "node --test --import tsx tests/*.test.ts",
     "test:unit": "node --test --import tsx tests/client.test.ts",
     "test:integration": "node --test --import tsx tests/integration.test.ts",
+    "test:real": "node --test --import tsx tests/integration-real.test.ts",
     "test:coverage": "node --test --import tsx tests/*.test.ts",
+    "get-token": "tsx scripts/get-token.ts",
     "dev": "tsx src/index.ts"
   },
   "keywords": [
@@ -34,7 +36,9 @@
     "node": ">=22.0.0"
   },
   "dependencies": {
+    "@azure/msal-node": "^5.1.2",
     "@modelcontextprotocol/sdk": "^1.29.0",
+    "jwt-decode": "^4.0.0",
     "zod": "^4.3.6"
   },
   "devDependencies": {
