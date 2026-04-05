@@ -201,6 +201,40 @@ export class TeamsApiClient {
     )
   }
 
+  // Targeted Activity endpoints (experimental)
+  async sendTargetedActivity (
+    conversationId: string,
+    activity: Partial<Activity>
+  ): Promise<{ id: string }> {
+    return this.request(
+      'POST',
+      `${this.serviceUrl}/v3/conversations/${encodeURIComponent(conversationId)}/activities?isTargetedActivity=true`,
+      { body: activity }
+    )
+  }
+
+  async updateTargetedActivity (
+    conversationId: string,
+    activityId: string,
+    activity: Partial<Activity>
+  ): Promise<{ id: string }> {
+    return this.request(
+      'PUT',
+      `${this.serviceUrl}/v3/conversations/${encodeURIComponent(conversationId)}/activities/${encodeURIComponent(activityId)}?isTargetedActivity=true`,
+      { body: activity }
+    )
+  }
+
+  async deleteTargetedActivity (
+    conversationId: string,
+    activityId: string
+  ): Promise<void> {
+    return this.request(
+      'DELETE',
+      `${this.serviceUrl}/v3/conversations/${encodeURIComponent(conversationId)}/activities/${encodeURIComponent(activityId)}?isTargetedActivity=true`
+    )
+  }
+
   async getActivityMembers (
     conversationId: string,
     activityId: string

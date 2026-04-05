@@ -2,7 +2,10 @@ import { z } from 'zod'
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js'
 import type { TeamsApiClient } from './client.js'
+import type { GraphTeamsClient } from './graph.js'
 import type { Activity, Account, CreateConversationParams, ReactionType } from './types.js'
+import { getDelegatedGraphToken } from './token.js'
+import type { TokenManagerOptions } from './token.js'
 
 export function registerTools (server: McpServer, client: TeamsApiClient): void {
   // Team tools
@@ -147,14 +150,27 @@ export function registerTools (server: McpServer, client: TeamsApiClient): void 
     'Send a message to a conversation',
     {
       conversationId: z.string().describe('The conversation ID'),
-      text: z.string().describe('The message text'),
+      text: z.string().optional().describe('The message text'),
+      attachments: z
+        .array(
+          z.object({
+            contentType: z.string().describe('Content type (e.g., application/vnd.microsoft.card.adaptive)'),
+            content: z.unknown().describe('Attachment content (e.g., Adaptive Card JSON)'),
+          })
+        )
+        .optional()
+        .describe('Message attachments (e.g., Adaptive Cards)'),
       channelData: z.record(z.string(), z.unknown()).optional().describe('Additional channel data'),
     },
-    async ({ conversationId, text, channelData }): Promise<CallToolResult> => {
+    async ({ conversationId, text, attachments, channelData }): Promise<CallToolResult> => {
       try {
         const activity: Partial<Activity> = {
           type: 'message',
           text,
+          attachments: attachments?.map((a) => ({
+            contentType: a.contentType,
+            content: a.content,
+          })),
           channelData,
         }
         const result = await client.sendActivity(conversationId, activity)
@@ -545,4 +561,101 @@ function handleError (error: unknown): CallToolResult {
     content: [{ type: 'text', text: JSON.stringify({ error: message }, null, 2) }],
     isError: true,
   }
+}
+
+export function registerGraphTools (server: McpServer, client: GraphTeamsClient, tokenOptions?: TokenManagerOptions): void {
+  server.tool(
+    'teams_create_graph_chat',
+    'Create a new chat using Microsoft Graph API',
+    {
+      chatType: z.enum(['oneOnOne', 'group']).describe('Type of chat'),
+      participants: z
+        .array(z.object({ userId: z.string() }))
+        .describe('Array of user IDs to add to the chat'),
+      topic: z.string().optional().describe('Topic name for group chat'),
+    },
+    async (params): Promise<CallToolResult> => {
+      try {
+        if (tokenOptions) {
+          const tokenInfo = await getDelegatedGraphToken(tokenOptions)
+          client.setToken(tokenInfo.token)
+        }
+        const result = await client.createChat(
+          params.chatType,
+          params.participants,
+          params.topic
+        )
+        return {
+          content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
+        }
+      } catch (error) {
+        return handleError(error)
+      }
+    }
+  )
+
+  server.tool(
+    'teams_list_graph_chats',
+    'List all chats using Microsoft Graph API',
+    {},
+    async (): Promise<CallToolResult> => {
+      try {
+        if (tokenOptions) {
+          const tokenInfo = await getDelegatedGraphToken(tokenOptions)
+          client.setToken(tokenInfo.token)
+        }
+        const result = await client.listChats()
+        return {
+          content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
+        }
+      } catch (error) {
+        return handleError(error)
+      }
+    }
+  )
+
+  server.tool(
+    'teams_send_graph_message',
+    'Send a message to a chat using Microsoft Graph API',
+    {
+      chatId: z.string().describe('The chat ID'),
+      content: z.string().describe('Message content (HTML supported)'),
+    },
+    async ({ chatId, content }): Promise<CallToolResult> => {
+      try {
+        if (tokenOptions) {
+          const tokenInfo = await getDelegatedGraphToken(tokenOptions)
+          client.setToken(tokenInfo.token)
+        }
+        const result = await client.sendMessage(chatId, content)
+        return {
+          content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
+        }
+      } catch (error) {
+        return handleError(error)
+      }
+    }
+  )
+
+  server.tool(
+    'teams_list_graph_messages',
+    'List messages in a chat using Microsoft Graph API',
+    {
+      chatId: z.string().describe('The chat ID'),
+    },
+    async ({ chatId }): Promise<CallToolResult> => {
+      try {
+        if (tokenOptions) {
+          const tokenInfo = await getDelegatedGraphToken(tokenOptions)
+          client.setToken(tokenInfo.token)
+        }
+        const result = await client.listMessages(chatId)
+        return {
+          content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
+        }
+      } catch (error) {
+        return handleError(error)
+      }
+    }
+  )
 }
