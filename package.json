@@ -1,0 +1,51 @@
+{
+  "name": "mcp-apx-ts",
+  "version": "0.1.0",
+  "description": "MCP server for Microsoft Teams API",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "scripts": {
+    "clean": "node --experimental-vm-modules node_modules/.bin/rimraf ./dist",
+    "build": "tsc",
+    "lint": "eslint src",
+    "lint:fix": "eslint src --fix",
+    "lint:tests": "eslint tests",
+    "test": "node --test --import tsx tests/*.test.ts",
+    "test:unit": "node --test --import tsx tests/client.test.ts",
+    "test:integration": "node --test --import tsx tests/integration.test.ts",
+    "test:coverage": "node --test --import tsx tests/*.test.ts",
+    "dev": "tsx src/index.ts"
+  },
+  "keywords": [
+    "mcp",
+    "modelcontextprotocol",
+    "microsoft-teams",
+    "msteams"
+  ],
+  "license": "MIT",
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.18.0",
+    "@types/node": "^22.10.0",
+    "eslint": "^9.18.0",
+    "globals": "^15.14.0",
+    "neostandard": "^0.13.0",
+    "rimraf": "^6.0.1",
+    "tsx": "^4.19.2",
+    "typescript": "^6.0.2",
+    "typescript-eslint": "^8.20.0"
+  }
+}
