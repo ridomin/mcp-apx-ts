@@ -18,10 +18,13 @@ A Model Context Protocol (MCP) server for Microsoft Teams that provides tools to
 - Send/list messages
 - Uses delegated authentication (device code flow)
 
-## Quick Start
+## Requirements
+
+- Node.js >= 22.0.0
+
+## Installation
 
 ```bash
-cd mcp-apx-ts
 npm install
 npm run build
 ```
@@ -33,6 +36,62 @@ Set environment variables:
 export CLIENT_ID="your-azure-app-id"
 export CLIENT_SECRET="your-client-secret"
 export TENANT_ID="your-tenant-id"
+```
+
+## Running
+
+### Development mode
+```bash
+npm run dev
+```
+
+### Production
+```bash
+node ./dist/index.js
+```
+
+## Testing
+
+Run all tests:
+```bash
+npm test
+```
+
+Run unit tests:
+```bash
+npm run test:unit
+```
+
+Run integration tests:
+```bash
+npm run test:integration
+```
+
+Run tests with coverage:
+```bash
+npm run test:coverage
+```
+
+### Get Token
+
+To get a Graph API token for testing:
+```bash
+npm run get-token
+```
+
+## Linting
+
+```bash
+npm run lint
+npm run lint:fix
+npm run lint:tests
+```
+
+## Building
+
+```bash
+npm run build
+npm run clean
 ```
 
 ## Adaptive Cards
@@ -89,12 +148,6 @@ To send rich messages with Adaptive Cards, use the `attachments` parameter:
 | `teams_list_graph_chats` | List chats (Graph API) |
 | `teams_send_graph_message` | Send message (Graph API) |
 | `teams_list_graph_messages` | List messages (Graph API) |
-
-## Testing
-
-```bash
-npm test
-```
 
 ## OpenCode Configuration
 
