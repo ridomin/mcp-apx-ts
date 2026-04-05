@@ -2,7 +2,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { TeamsApiClient } from './client.js'
 import { GraphTeamsClient } from './graph.js'
-import { registerTools, registerGraphTools } from './tools.js'
+import { registerTools, registerGraphTools, registerWebhookTools } from './tools.js'
 import { getBotToken, getDelegatedGraphToken, isTokenExpired, type BotTokenInfo, type TokenManagerOptions } from './token.js'
 
 export interface ServerOptions {
@@ -75,6 +75,7 @@ export async function createServerWithAuth (options: ServerOptions = {}): Promis
 
   registerTools(server, client)
   registerGraphTools(server, graphClient, tokenOptions)
+  registerWebhookTools(server, tokenOptions)
 
   return { server, client, graphClient }
 }
